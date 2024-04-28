@@ -1,8 +1,11 @@
 #include <Wire.h>
+
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
 #include <MQUnifiedsensor.h>
+
+#include <Adafruit_BMP085.h>
 
 #define BOARD              ("ESP8266")
 #define PIN                (A0)
@@ -13,6 +16,8 @@
 
 Adafruit_SSD1306 display(128, 64, &Wire);
 MQUnifiedsensor MQ135(BOARD, VOLTAGE_RESOLUTION, ADC_BIT_RESOLUTION, PIN, TYPE);
+
+Adafruit_BMP085 bmp;
 
 void setup() {
     // serial connection
@@ -28,6 +33,12 @@ void setup() {
     MQ135.setA(110.47); MQ135.setB(-2.862); // a and b for C02 calculation
     MQ135.init(); 
     calibrate();
+
+    // set up BMP180 sensor
+    if (!bmp.begin()) {
+        Serial.println("Could not find a valid BMP085 sensor, check wiring!");
+        while (1) {}
+    }
 }
 
 /*
@@ -59,6 +70,27 @@ void calibrate() {
 void loop() {
     MQ135.update(); // Update data, the arduino will read the voltage from the analog pin
     displayData(MQ135.readSensor() + 400);
+
+
+    // test for the temperature sensor:
+    Serial.print("Temperature = ");
+    Serial.print(bmp.readTemperature());
+    Serial.println(" *C");
+    
+    Serial.print("Pressure = ");
+    Serial.print(bmp.readPressure());
+    Serial.println(" Pa");
+    
+    // Calculate altitude assuming 'standard' barometric
+    // pressure of 1013.25 millibar = 101325 Pascal
+    Serial.print("Altitude = ");
+    Serial.print(bmp.readAltitude());
+    Serial.println(" meters");
+
+    Serial.print("Pressure at sealevel (calculated) = ");
+    Serial.print(bmp.readSealevelPressure());
+    Serial.println(" Pa");
+
     delay(500); //Sampling frequency
 }
 
