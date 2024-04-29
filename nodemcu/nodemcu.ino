@@ -34,9 +34,16 @@ IPAddress localIP(192, 168, 1, 107);
 IPAddress gateway(192, 168, 1, 1);
 IPAddress subnet(255, 255, 255, 0);
 
-String ppm;
+String ppmCO;
+String ppmCO2;
+String ppmAlcohol;
+String ppmNH4;
+String ppmAceton;
+String ppmToulen;
+
 String temperature;
 String pressure;
+String seaLevelPressure;
 String altitude;
 
 // Timer variables
@@ -78,9 +85,31 @@ void initOLED() {
 
 void initMQ135() {
     MQ135.setRegressionMethod(1);
-    MQ135.setA(110.47); MQ135.setB(-2.862);
     MQ135.init(); 
     calibrate();
+}
+
+void measurePPM() {
+
+    MQ135.update(); // Update data, the arduino will read the voltage from the analog pin
+
+    MQ135.setA(605.18); MQ135.setB(-3.937); // Configure the equation to calculate CO concentration value
+    ppmCO = MQ135.readSensor(); // Sensor will read PPM concentration using the model, a and b values set previously or from the setup
+
+    MQ135.setA(110.47); MQ135.setB(-2.862); // Configure the equation to calculate CO2 concentration value
+    ppmCO2 = MQ135.readSensor() + 400; // Sensor will read PPM concentration using the model, a and b values set previously or from the setup
+
+    MQ135.setA(102.2 ); MQ135.setB(-2.473); // Configure the equation to calculate NH4 concentration value
+    ppmNH4 = MQ135.readSensor(); // Sensor will read PPM concentration using the model, a and b values set previously or from the setup
+
+    MQ135.setA(77.255); MQ135.setB(-3.18); //Configure the equation to calculate Alcohol concentration value
+    ppmAlcohol = MQ135.readSensor(); // SSensor will read PPM concentration using the model, a and b values set previously or from the setup
+
+    MQ135.setA(44.947); MQ135.setB(-3.445); // Configure the equation to calculate Toluen concentration value
+    ppmToulen = MQ135.readSensor(); // Sensor will read PPM concentration using the model, a and b values set previously or from the setup
+    
+    MQ135.setA(34.668); MQ135.setB(-3.369); // Configure the equation to calculate Aceton concentration value
+    ppmAceton = MQ135.readSensor(); // Sensor will rea
 }
 
 void initBMP180() {
@@ -98,11 +127,24 @@ void initAP() {
 
 void initWebServer() {
     server.on("/circumstances", HTTP_GET, [](AsyncWebServerRequest *request){
-        String json_response = 
-        "{\"nodemcu\":{\"mq135\":{\"ppm\":\"" + String(readPPM().c_str()) 
-        + "\"},\"bmp180\":{\"temperature\":\"" + String(readTemperature().c_str()) +
-        + "\",\"pressure\":\""+ String(readPressure().c_str()) 
-        + "\",\"altitude\":\"" + String(readAltitude().c_str()) + "\"}}}";
+        String json_response = "";
+        json_response += "{\"nodemcu\":{";
+        json_response += "\"mq135\":{";
+        json_response += "\"co\":\"" + readPPM("co") + "\",";
+        json_response += "\"co2\":\"" + readPPM("co2") + "\",";
+        json_response += "\"alcohol\":\"" + readPPM("alcohol") + "\",";
+        json_response += "\"nh4\":\"" + readPPM("nh4") + "\",";
+        json_response += "\"aceton\":\"" + readPPM("aceton") + "\",";
+        json_response += "\"toulen\":\"" + readPPM("toulen") + "\"";
+        json_response += "},";
+        json_response += "\"bmp180\":{";
+        json_response += "\"temperature\":\"" + readTemperature() + "\",";
+        json_response += "\"pressure\":\"" + readPressure() + "\",";
+        json_response += "\"seaLevelPressure\":\"" + readSeaLevelPressure() + "\",";
+        json_response += "\"altitude\":\"" + readAltitude() + "\"";
+        json_response += "}";
+        json_response += "}";
+        json_response += "}";
 
         request->send(200, "application/json", json_response);
         Serial.println("<^> GET /circumstance");
@@ -113,11 +155,21 @@ void initWebServer() {
     Serial.println("<.> HTTP server started.");
 }
 
-/*
-    Read the MQ-135 sensor and returns the PPM value.
-*/
-String readPPM() {
-    return ppm;
+String readPPM(String molecule) {
+
+    if (molecule == "co")
+        return ppmCO;
+    else if (molecule == "co2")
+        return ppmCO2;
+    else if (molecule == "alcohol")
+        return ppmAlcohol;
+    else if (molecule == "nh4")
+        return ppmNH4;
+    else if (molecule == "aceton")
+        return ppmAceton;
+    else if (molecule == "toulen")
+        return ppmToulen;
+    return "no data";
 }
 
 /*
@@ -127,12 +179,15 @@ String readTemperature() {
     return temperature;
 }
 
-
 /*
     Read BMP180 sensor and returns the pressure value.
 */
 String readPressure() {
     return pressure;
+}
+
+String readSeaLevelPressure() {
+    return seaLevelPressure;
 }
 
 /*
@@ -167,17 +222,18 @@ void calibrate() {
 }
 
 void loop() {
-    MQ135.update(); // Update data, the arduino will read the voltage from the analog pin
-
-    ppm = MQ135.readSensor() + 400;
+    measurePPM(); 
+    
     temperature = bmp.readTemperature();
     pressure = bmp.readPressure() / 100;
-    altitude = bmp.readAltitude(101325);
+    float slp = bmp.readSealevelPressure(150);
+    seaLevelPressure = slp / 100.0F;
+    altitude = bmp.readAltitude(slp);
 
     display.clearDisplay();
     display.setCursor(0, 0);
     display.print("\nCO2: ");
-    display.print(ppm);
+    display.print(ppmCO2);
     display.print(" ppm");
     display.print("\n\nTemperatura: ");
     display.print(temperature);
