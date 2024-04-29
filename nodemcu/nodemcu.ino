@@ -17,8 +17,10 @@
 #define ADC_BIT_RESOLUTION (10)
 #define RATIOMQ135CLEANAIR (3.6) 
 
-#define NETSSID ("eps-iot")
-#define NETPASS ("15u`YN2_^hV>")
+#define NETSSID ("wifi-ssid")
+#define NETPASS ("wifi-password")
+
+#include "secret.h"
 
 Adafruit_SSD1306 display(128, 64, &Wire);
 MQUnifiedsensor MQ135(BOARD, VOLTAGE_RESOLUTION, ADC_BIT_RESOLUTION, PIN, TYPE);
@@ -57,24 +59,28 @@ void setup() {
     // set up the OLED display
     Serial.println();
     Serial.println();
-    Serial.println("<...> Setting up OLED display...");
+    Serial.println("<.> Setting up OLED display...");
     initOLED();
+    Serial.println("<-> success.");
 
     // set up the MQ-135 gas sensor
-    Serial.println("<...> Setting up MQ-135 gas sensor...");
+    Serial.println("<.> Setting up MQ-135 gas sensor...");
     initMQ135();
+    Serial.println("<-> success.");
 
     // set up BMP180 sensor
-    Serial.println("<...> Setting up BMP180 temperature and pressure sensor...");
+    Serial.println("<.> Setting up BMP180 temperature and pressure sensor...");
     initBMP180();
+    Serial.println("<-> success.");
 
     // set up ESP8266 as an access point
-    Serial.println("<...> Setting up the access point...");
+    Serial.println("<.> Setting up the wireless connection...");
     initAP();
 
     // set up the web server
-    Serial.println("<...> Setting up the web server...");
+    Serial.println("<.> Setting up the web server...");
     initWebServer();
+    Serial.println("<-> Setting up finished. HTTP server is now online!");
 }
 
 void initOLED() {
@@ -120,9 +126,17 @@ void initBMP180() {
 }
 
 void initAP() {
-    WiFi.softAP(ssid, password);
-    Serial.print("<.> Access point running on address: ");
-    Serial.println(WiFi.softAPIP());
+    WiFi.mode(WIFI_STA);
+    WiFi.disconnect();
+    WiFi.begin(ssid, password);
+    Serial.print("<.> Connecting to " + WiFi.SSID() + " WiFi network");
+    while (WiFi.status() != WL_CONNECTED) {
+        Serial.print(".");
+        delay(500);
+    }
+    Serial.println();
+    Serial.print("<-> Connected to " + WiFi.SSID() + " at address: ");
+    Serial.println(WiFi.localIP());
 }
 
 void initWebServer() {
