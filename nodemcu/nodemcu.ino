@@ -1,4 +1,5 @@
 #include <Wire.h>
+#include <OneWire.h>
 
 #include <ESP8266WiFi.h>
 #include <ESPAsyncTCP.h>
@@ -9,6 +10,7 @@
 
 #include <MQUnifiedsensor.h>
 #include <Adafruit_BMP085.h>
+#include <DallasTemperature.h>
 
 // definitions for MQ-135 gas sensor
 #define BOARD              ("ESP8266")
@@ -18,12 +20,19 @@
 #define ADC_BIT_RESOLUTION (10)
 #define RATIOMQ135CLEANAIR (3.6)
 
+// pin for the DS18B20 temperature sensor
+#define ONE_WIRE_BUS 2
+
 // header contains ssid and password to the wireless network
 #include "secret.h"
 
 Adafruit_SSD1306 display(128, 64, &Wire);
 MQUnifiedsensor MQ135(BOARD, VOLTAGE_RESOLUTION, ADC_BIT_RESOLUTION, PIN, TYPE);
 Adafruit_BMP085 bmp;
+
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature sensors(&oneWire);
+int numberOfDevices;
 
 // wifi network setup
 AsyncWebServer server(80);
@@ -58,10 +67,26 @@ void setup() {
     initMQ135();
     initBMP180();
 
+    // into separate function
+
+    sensors.begin();
+    // Grab a count of devices on the wire
+    numberOfDevices = sensors.getDeviceCount();
+    
+    // locate devices on the bus
+    Serial.print("<.> Locating DS18B20 sensors...");
+    Serial.print("<.> Found ");
+    Serial.print(numberOfDevices, DEC);
+    Serial.println(" devices.");
+
     // web server starts only if the connection is established
-    if (initConnection()) {
-        initWebServer();
+
+    while (initConnection() == false) {
+        Serial.println("<!> Retrying connection in 1 second...");
+        delay(1000);
     }
+
+    initWebServer();
 }
 
 void loop() {
