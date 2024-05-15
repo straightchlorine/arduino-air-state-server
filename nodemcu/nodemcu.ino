@@ -12,6 +12,10 @@
 #include <Adafruit_BMP085.h>
 #include <DallasTemperature.h>
 
+#include <Adafruit_Sensor.h>
+#include <DHT.h>
+#include <DHT_U.h>
+
 // definitions for MQ-135 gas sensor
 #define BOARD              ("ESP8266")
 #define PIN                (A0)
@@ -23,6 +27,10 @@
 // pin for the DS18B20 temperature sensor
 #define ONE_WIRE_BUS 2
 
+// DHT22 temperature and humidity sensor
+#define DHTPIN 14
+#define DHTTYPE DHT22
+
 // header contains ssid and password to the wireless network
 #include "secret.h"
 
@@ -33,6 +41,8 @@ Adafruit_BMP085 bmp;
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
 int numberOfDevices;
+
+DHT_Unified dht(DHTPIN, DHTTYPE);
 
 // wifi network setup
 AsyncWebServer server(80);
@@ -79,8 +89,9 @@ void setup() {
     Serial.print(numberOfDevices, DEC);
     Serial.println(" devices.");
 
-    // web server starts only if the connection is established
+    dht.begin();
 
+    // web server starts only if the connection is established
     while (initConnection() == false) {
         Serial.println("<!> Retrying connection in 1 second...");
         delay(1000);
@@ -90,6 +101,29 @@ void setup() {
 }
 
 void loop() {
+
+    // into separate function
+    sensors_event_t event;
+    dht.temperature().getEvent(&event);
+    if (isnan(event.temperature)) {
+        Serial.println(F("Error reading temperature!"));
+    }
+    else {
+        Serial.print(F("Temperature: "));
+        Serial.print(event.temperature);
+        Serial.println(F("°C"));
+    }
+    // Get humidity event and print its value.
+    dht.humidity().getEvent(&event);
+    if (isnan(event.relative_humidity)) {
+        Serial.println(F("Error reading humidity!"));
+    }
+    else {
+        Serial.print(F("Humidity: "));
+        Serial.print(event.relative_humidity);
+        Serial.println(F("%"));
+    }
+
     readBMP180();
     readMQ135();
     displayData();
