@@ -42,7 +42,6 @@ OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
 
 #define DS18B20_SENSORS 8
-float temperatures[DS18B20_SENSORS];
 
 DHT_Unified dht(DHTPIN, DHTTYPE);
 
@@ -51,7 +50,7 @@ AsyncWebServer server(80);
 const char *ssid = NETSSID;
 const char *password = NETPASS;
 
-// MQ-135 gas sensor variables
+// MQ-135
 String ppmCO;
 String ppmCO2;
 String ppmAlcohol;
@@ -59,63 +58,175 @@ String ppmNH4;
 String ppmAceton;
 String ppmToulen;
 
-// BMP180 temperature and pressure sensor variables
+// BMP180
 String temperature;
 String pressure;
 String seaLevelPressure;
 String altitude;
 
+// DS18B20
+float temperatures[DS18B20_SENSORS];
+
+// DHT22
+String dhtTemperature;
+String humidity;
+
 // connection status
 String connectionPrompt;
 
 void setup() {
-    pinMode(LED_BUILTIN, OUTPUT);
     Serial.begin(9600);
-    Serial.println("<.> Initializing the peripherals:");
+    Serial.println(F("<.> Initializing the peripherals:"));
 
+    pinMode(LED_BUILTIN, OUTPUT);
+
+    // initiating the peripherals
     initOLED();
     initMQ135();
     initBMP180();
     initDS18B20();
 
+    // starting the dht22 sensor
+    Serial.println(F("<.> Setting up DHT22 temperature and humidity sensor:"));
     dht.begin();
 
     // web server starts only if the connection is established
     while (initConnection() == false) {
-        Serial.println("<!> Retrying connection in 1 second...");
+        Serial.println(F("<!> Retrying connection in 1 second..."));
         delay(1000);
     }
 
     initWebServer();
+    blink();
+}
+
+bool initOLED() {
+    Serial.println(F("<.> Setting up OLED display..."));
+    if (display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+        display.clearDisplay();
+        display.setTextSize(1);
+        display.setTextColor(WHITE);
+        Serial.println(F("<-> success."));
+        return true;
+    } else {
+        Serial.println(F("<!> failure."));
+        return false; 
+    } 
+}
+
+void initMQ135() {
+    Serial.println(F("<.> Setting up MQ-135 gas sensor..."));
+    MQ135.setRegressionMethod(1);
+    MQ135.init();
+    calibrateMQ135();
+    Serial.println(F("<-> success."));
+}
+
+bool initBMP180() {
+    Serial.println(F("<.> Setting up BMP180 temperature and pressure sensor..."));
+    if (bmp.begin()) {
+        Serial.println(F("<-> success."));
+        return true;
+    }
+    else {
+        Serial.println(F("<!> failure."));
+        return false;
+    }
+}
+
+void initDS18B20() {
+    Serial.println(F("<.> Setting up DS18B20 temperature sensor..."));
+    sensors.begin();
+    int numberOfDevices = sensors.getDeviceCount();
+
+    if (numberOfDevices == 0) {
+        Serial.print(F("<!> Detected "));
+        Serial.print(numberOfDevices);
+        Serial.println(F(" DS18B20 sensors."));
+        Serial.println(F("<-> failure "));
+    } else if (numberOfDevices != 8) {
+        Serial.print(F("<?> Detected unexpected number of sensors: "));
+        Serial.print(numberOfDevices);
+        Serial.println(F("."));
+        Serial.println(F("<?> functionality uncertain."));
+    } else {
+        Serial.print(F("<.> Detected expected number of sensors: "));
+        Serial.println(numberOfDevices);
+        Serial.println(F("<-> success "));
+    }
+}
+
+bool initConnection() {
+    Serial.println(F("<.> Setting up the wireless connection..."));
+    WiFi.mode(WIFI_STA);
+    WiFi.disconnect();
+    WiFi.begin(ssid, password);
+
+    Serial.print("<.> Connecting to " + WiFi.SSID() + " WiFi network");
+    unsigned long startTime = millis();
+    while (WiFi.status() != WL_CONNECTED) {
+        // timeout after 10 seconds
+        if (millis() - startTime >= 10000) {
+            Serial.println();
+            Serial.println(F("<!> failure - connection timed out."));
+            return false;
+        }
+        Serial.print(F("."));
+        delay(500);
+    }
+
+    Serial.println();
+    Serial.print("<-> Connected to " + WiFi.SSID() + " at address: ");
+    Serial.println(WiFi.localIP());
+    connectionPrompt = "\n" + WiFi.SSID() + ": " + WiFi.localIP().toString();
+
+    Serial.println(F("<-> success."));
+    return true;
+}
+
+void initWebServer() {
+    Serial.println(F("<.> Setting up the web server..."));
+    server.on("/circumstances", HTTP_GET, [](AsyncWebServerRequest *request){
+        String json_response = "";
+        json_response += "{\"nodemcu\":{";
+        json_response += "\"mq135\":{";
+        json_response += "\"co\":\"" + readMQ135("co") + "\",";
+        json_response += "\"co2\":\"" + readMQ135("co2") + "\",";
+        json_response += "\"alcohol\":\"" + readMQ135("alcohol") + "\",";
+        json_response += "\"nh4\":\"" + readMQ135("nh4") + "\",";
+        json_response += "\"aceton\":\"" + readMQ135("aceton") + "\",";
+        json_response += "\"toulen\":\"" + readMQ135("toulen") + "\"";
+        json_response += "},";
+        json_response += "\"bmp180\":{";
+        json_response += "\"temperature\":\"" + readBMP180("temperature") + "\",";
+        json_response += "\"pressure\":\"" + readBMP180("pressure") + "\",";
+        json_response += "\"seaLevelPressure\":\"" + readBMP180("sealevelpressure") + "\",";
+        json_response += "\"altitude\":\"" + readBMP180("altitude") + "\"";
+        json_response += "},";
+        json_response += "\"ds18b20\":{";
+        json_response += "\"temperature\":\"" + readAverageDS18B20() + "\"";
+        json_response += "},";
+        json_response += "\"dht22\":{";
+        json_response += "\"temperature\":\"" + readDHT22("temperature") + "\",";
+        json_response += "\"humidity\":\"" + readDHT22("humidity") + "\"";
+        json_response += "}";
+        json_response += "}";
+        json_response += "}";
+
+        request->send(200, "application/json", json_response);
+    });
+
+    server.begin();
+    Serial.println(F("<-> Setting up finished. HTTP server is now online!"));
 }
 
 void loop() {
 
-    // into separate function
-    sensors_event_t event;
-    dht.temperature().getEvent(&event);
-    if (isnan(event.temperature)) {
-        Serial.println(F("Error reading temperature!"));
-    }
-    else {
-        Serial.print(F("Temperature: "));
-        Serial.print(event.temperature);
-        Serial.println(F("°C"));
-    }
-    // Get humidity event and print its value.
-    dht.humidity().getEvent(&event);
-    if (isnan(event.relative_humidity)) {
-        Serial.println(F("Error reading humidity!"));
-    }
-    else {
-        Serial.print(F("Humidity: "));
-        Serial.print(event.relative_humidity);
-        Serial.println(F("%"));
-    }
-
     readBMP180();
     readMQ135();
     readDS18B20();
+    readDHT22();
+
     displayData();
     delay(500);
 }
@@ -163,6 +274,28 @@ void readDS18B20() {
     }
 }
 
+void readDHT22() {
+    sensors_event_t event;
+
+    // get temperature from DHT22 sensor
+    dht.temperature().getEvent(&event);
+    if (isnan(event.temperature)) {
+        Serial.println(F("<!> Error reading temperature using DHT22 sensor."));
+    }
+    else {
+        dhtTemperature = event.temperature;
+    }
+
+    // get humidity from DHT22 sensor
+    dht.humidity().getEvent(&event);
+    if (isnan(event.relative_humidity)) {
+        Serial.println(F("<!> Error reading humidity using DHT22 sensor."));
+    }
+    else {
+        humidity = event.relative_humidity;
+    }
+}
+
 void displayData() {
     display.clearDisplay();
     display.setCursor(0, 0);
@@ -179,28 +312,6 @@ void displayData() {
     display.display();
 }
 
-bool initOLED() {
-    Serial.println("<.> Setting up OLED display...");
-    if (display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
-        display.clearDisplay();
-        display.setTextSize(1);
-        display.setTextColor(WHITE);
-        Serial.println("<-> success.");
-        return true;
-    } else {
-        Serial.println("<!> failure.");
-        return false; 
-    } 
-}
-
-void initMQ135() {
-    Serial.println("<.> Setting up MQ-135 gas sensor...");
-    MQ135.setRegressionMethod(1);
-    MQ135.init();
-    calibrateMQ135();
-    Serial.println("<-> success.");
-}
-
 void calibrateMQ135() {
     float calcR0 = 0;
 
@@ -213,93 +324,20 @@ void calibrateMQ135() {
 
     if(isinf(calcR0)) {
         // open circuit
-        Serial.println("<!> failure.");
+        Serial.println(F("<!> failure."));
     }
     if(calcR0 == 0) {
         // analog to ground
-        Serial.println("<!> failure.");
+        Serial.println(F("<!> failure."));
     }
 }
 
-bool initBMP180() {
-    Serial.println("<.> Setting up BMP180 temperature and pressure sensor...");
-    if (bmp.begin()) {
-        Serial.println("<-> success.");
-        return true;
-    }
-    else {
-        Serial.println("<!> failure.");
-        return false;
-    }
-}
-
-void initDS18B20() {
-    sensors.begin();
-    Serial.print("<.> Detected ");
-    Serial.print(sensors.getDeviceCount());
-    Serial.println(" DS18B20 sensors.");
-}
-
-bool initConnection() {
-    Serial.println("<.> Setting up the wireless connection...");
-    WiFi.mode(WIFI_STA);
-    WiFi.disconnect();
-    WiFi.begin(ssid, password);
-
-    Serial.print("<.> Connecting to " + WiFi.SSID() + " WiFi network");
-    unsigned long startTime = millis();
-    while (WiFi.status() != WL_CONNECTED) {
-        // timeout after 10 seconds
-        if (millis() - startTime >= 10000) {
-            Serial.println();
-            Serial.println("<!> failure - connection timed out.");
-            return false;
-        }
-        Serial.print(".");
-        delay(500);
-    }
-
-    blink();
-    Serial.println();
-    Serial.print("<-> Connected to " + WiFi.SSID() + " at address: ");
-    Serial.println(WiFi.localIP());
-    connectionPrompt = "\n" + WiFi.SSID() + ": " + WiFi.localIP().toString();
-
-    Serial.println("<-> success.");
-    return true;
-}
-
-void initWebServer() {
-    Serial.println("<.> Setting up the web server...");
-    server.on("/circumstances", HTTP_GET, [](AsyncWebServerRequest *request){
-        String json_response = "";
-        json_response += "{\"nodemcu\":{";
-        json_response += "\"mq135\":{";
-        json_response += "\"co\":\"" + readMQ135("co") + "\",";
-        json_response += "\"co2\":\"" + readMQ135("co2") + "\",";
-        json_response += "\"alcohol\":\"" + readMQ135("alcohol") + "\",";
-        json_response += "\"nh4\":\"" + readMQ135("nh4") + "\",";
-        json_response += "\"aceton\":\"" + readMQ135("aceton") + "\",";
-        json_response += "\"toulen\":\"" + readMQ135("toulen") + "\"";
-        json_response += "},";
-        json_response += "\"bmp180\":{";
-        json_response += "\"temperature\":\"" + readBMP180("temperature") + "\",";
-        json_response += "\"pressure\":\"" + readBMP180("pressure") + "\",";
-        json_response += "\"seaLevelPressure\":\"" + readBMP180("sealevelpressure") + "\",";
-        json_response += "\"altitude\":\"" + readBMP180("altitude") + "\"";
-        json_response += "},";
-        json_response += "\"ds18b20\":{";
-        json_response += "\"temperature\":\"" + readAverageDS18B20() + "\"";
-        json_response += "}";
-        json_response += "}";
-        json_response += "}";
-
-        request->send(200, "application/json", json_response);
-    });
-
-    server.begin();
-    Serial.println("<-> Setting up finished. HTTP server is now online!");
-    blink();
+String readDHT22(String param) {
+    if (param == "temperature")
+        return dhtTemperature;
+    else if (param == "humidity")
+        return humidity;
+    return "no data";
 }
 
 String readAverageDS18B20() {
@@ -342,11 +380,11 @@ String readBMP180(String param) {
 
 /* Generates three quick blinks of the builtin led */
 void blink() {
-    for (int i = 0; i < 3; i++) {
-        digitalWrite(LED_BUILTIN, LOW);
-        delay(250);
-        digitalWrite(LED_BUILTIN, HIGH);
-        delay(250);
+    for (int i = 0; i < 4; i++) {
+        digitalWrite(BUILTIN_LED, LOW); // Turn the LED on
+        delay(500); // Wait for 500 milliseconds
+        digitalWrite(BUILTIN_LED, HIGH); // Turn the LED off
+        delay(500); // Wait for 500 milliseconds
     }
 }
 
