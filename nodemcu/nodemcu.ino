@@ -40,7 +40,9 @@ Adafruit_BMP085 bmp;
 
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
-int numberOfDevices;
+
+#define DS18B20_SENSORS 8
+float temperatures[DS18B20_SENSORS];
 
 DHT_Unified dht(DHTPIN, DHTTYPE);
 
@@ -66,8 +68,6 @@ String altitude;
 // connection status
 String connectionPrompt;
 
-// TODO: if free add flags which will indicate if the sensor is connected
-// and assign appropriate variables to the screen
 void setup() {
     pinMode(LED_BUILTIN, OUTPUT);
     Serial.begin(9600);
@@ -76,18 +76,7 @@ void setup() {
     initOLED();
     initMQ135();
     initBMP180();
-
-    // into separate function
-
-    sensors.begin();
-    // Grab a count of devices on the wire
-    numberOfDevices = sensors.getDeviceCount();
-    
-    // locate devices on the bus
-    Serial.print("<.> Locating DS18B20 sensors...");
-    Serial.print("<.> Found ");
-    Serial.print(numberOfDevices, DEC);
-    Serial.println(" devices.");
+    initDS18B20();
 
     dht.begin();
 
@@ -126,6 +115,7 @@ void loop() {
 
     readBMP180();
     readMQ135();
+    readDS18B20();
     displayData();
     delay(500);
 }
@@ -163,6 +153,14 @@ void readMQ135() {
 
     MQ135.setA(34.668); MQ135.setB(-3.369);
     ppmAceton = MQ135.readSensor();
+}
+
+void readDS18B20() {
+    sensors.requestTemperatures();
+
+    for (int i = 0; i < DS18B20_SENSORS; i++) {
+        temperatures[i] = sensors.getTempCByIndex(i);
+    }
 }
 
 void displayData() {
@@ -235,6 +233,13 @@ bool initBMP180() {
     }
 }
 
+void initDS18B20() {
+    sensors.begin();
+    Serial.print("<.> Detected ");
+    Serial.print(sensors.getDeviceCount());
+    Serial.println(" DS18B20 sensors.");
+}
+
 bool initConnection() {
     Serial.println("<.> Setting up the wireless connection...");
     WiFi.mode(WIFI_STA);
@@ -248,7 +253,6 @@ bool initConnection() {
         if (millis() - startTime >= 10000) {
             Serial.println();
             Serial.println("<!> failure - connection timed out.");
-            connectionPrompt = "\nbrak polaczenia!";
             return false;
         }
         Serial.print(".");
@@ -283,6 +287,9 @@ void initWebServer() {
         json_response += "\"pressure\":\"" + readBMP180("pressure") + "\",";
         json_response += "\"seaLevelPressure\":\"" + readBMP180("sealevelpressure") + "\",";
         json_response += "\"altitude\":\"" + readBMP180("altitude") + "\"";
+        json_response += "},";
+        json_response += "\"ds18b20\":{";
+        json_response += "\"temperature\":\"" + readAverageDS18B20() + "\"";
         json_response += "}";
         json_response += "}";
         json_response += "}";
@@ -293,6 +300,16 @@ void initWebServer() {
     server.begin();
     Serial.println("<-> Setting up finished. HTTP server is now online!");
     blink();
+}
+
+String readAverageDS18B20() {
+    float average = 0;
+    String output = "";
+    for (int i = 0; i < DS18B20_SENSORS; i++) {
+        average += temperatures[i];
+    }
+    average = average / DS18B20_SENSORS;
+    return output + average;
 }
 
 String readMQ135(String molecule) {
