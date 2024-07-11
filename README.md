@@ -1,4 +1,4 @@
-# adruino-air-monitor
+# adruino-air-state-server
 
 Air quality monitor built with NodeMCU and following sensors:
 
@@ -7,6 +7,8 @@ Air quality monitor built with NodeMCU and following sensors:
 * DHT22;
 * DS18B20;
 * SSD1306.
+
+It connects to given network specified in `secrets.h` and returns registered data on `/circumstances` handle.
 
 Beneath, you can see the circuit diagram:
 
