@@ -1,6 +1,6 @@
 # adruino-air-monitor
 
-Very simple air quality monitor built on NodeMCU and sensors:
+Air quality monitor built with NodeMCU and following sensors:
 
 * MQ135;
 * BMP180;
